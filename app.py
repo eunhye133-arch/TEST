@@ -87,7 +87,7 @@ with st.sidebar:
     st.caption(f"텍스트 모델: `{TEXT_MODEL}`")
     IMAGE_MODEL = st.selectbox(
         "이미지 모델",
-        options=["gemini-2.0-flash-preview-image-generation", "gemini-2.0-flash-exp"],
+        options=["gemini-2.0-flash-exp", "gemini-2.0-flash"],
         index=0,
         help="Gemini 기반 이미지 생성 (AI Studio API Key로 바로 사용 가능)",
     )
@@ -121,10 +121,7 @@ def build_clients():
         model_name=TEXT_MODEL,
         system_instruction=system_prompt,
     )
-    image_client = genai_new.Client(
-        api_key=api_key,
-        http_options={"api_version": "v1alpha"},
-    )
+    image_client = genai_new.Client(api_key=api_key)
     return text_client, image_client
 
 
