@@ -171,8 +171,12 @@ def make_prompt(text_client, cut: str, template: str) -> str:
 
 def generate_image(prompt: str, ratio: str) -> Image.Image | None:
     w, h = RATIO_SIZE[ratio]
+    # 비ASCII 문자 제거 (Pollinations는 영문만 지원)
+    clean_prompt = prompt.encode("ascii", "ignore").decode("ascii").strip()
+    if not clean_prompt:
+        clean_prompt = "stickman 2D scene, flat matte colors, no text"
     url = (
-        f"https://image.pollinations.ai/prompt/{quote(prompt)}"
+        f"https://image.pollinations.ai/prompt/{quote(clean_prompt)}"
         f"?width={w}&height={h}&nologo=true&enhance=false&model=flux"
     )
     resp = requests.get(url, timeout=60)
