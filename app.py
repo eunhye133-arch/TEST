@@ -151,18 +151,21 @@ def split_script(text: str, sec: int) -> list[str]:
 
 
 def make_prompt(text_client, cut: str, template: str) -> str:
-    # 1단계: 한국어 장면을 영어로 번역
     translate_msg = (
-        f"Translate this Korean text into a single concise English sentence "
-        f"describing the visual scene. Reply in English only, no Korean.\n\nKorean: {cut}"
+        f"Translate this Korean text into ONE short English sentence (max 20 words). "
+        f"Use only basic ASCII characters. No quotes, no special symbols.\n\nKorean: {cut}"
     )
     trans_resp = text_client.generate_content(translate_msg)
-    english_scene = trans_resp.text.strip().encode("ascii", "ignore").decode("ascii").strip()
-    if not english_scene:
-        english_scene = "a person standing in a simple flat-color background"
-
-    # 2단계: 영어 장면으로 이미지 프롬프트 생성
-    return template.replace("{scene}", english_scene)
+    raw = trans_resp.text.strip()
+    # 유니코드 특수문자 → ASCII 대체
+    raw = raw.replace('\u201c', '').replace('\u201d', '').replace('\u2018', '').replace('\u2019', '')
+    raw = raw.replace('\u2014', '-').replace('\u2013', '-').replace('\u2026', '...')
+    # 한글 및 비ASCII 제거
+    raw = re.sub(r'[\uAC00-\uD7A3\u1100-\u11FF\u3130-\u318F]+', '', raw)
+    raw = raw.encode("ascii", "ignore").decode("ascii").strip()
+    if not raw or len(raw) < 5:
+        raw = "a person making a gesture in a simple flat-color room"
+    return template.replace("{scene}", raw)
 
 
 def generate_image(prompt: str, ratio: str) -> Image.Image | None:
