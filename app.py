@@ -1,15 +1,23 @@
 import streamlit as st
 import google.generativeai as genai
-from google import genai as genai_new
-from google.genai import types
+import requests
 import io
 import re
 import zipfile
 from PIL import Image
+from urllib.parse import quote
 
 # ── 상수 ──────────────────────────────────────────────────────────────────────
 TEXT_MODEL = "gemini-2.0-flash"
-CHARS_PER_SEC = 4.5  # 한국어 기준 초당 평균 글자 수
+CHARS_PER_SEC = 4.5
+
+RATIO_SIZE = {
+    "16:9": (1280, 720),
+    "1:1":  (1024, 1024),
+    "9:16": (720, 1280),
+    "4:3":  (1024, 768),
+    "3:4":  (768, 1024),
+}
 
 DEFAULT_STYLE = (
     "Upgraded stick-man 2D, thick black outline, pure white round face, "
@@ -36,7 +44,7 @@ Upgraded stick-man 2D, thick black outline, pure white round face, single hard c
 # ── 페이지 설정 ────────────────────────────────────────────────────────────────
 st.set_page_config(page_title="스틱맨 이미지 생성기", page_icon="🎬", layout="wide")
 st.title("🎬 스틱맨 이미지 생성기")
-st.caption("대본 입력 → 장면 분할 → 이미지 자동 생성")
+st.caption("대본 입력 → 장면 분할 → 이미지 자동 생성 (이미지 생성: Pollinations.ai 무료)")
 
 # ── API Key (Secrets 우선, 없으면 사이드바 입력) ───────────────────────────────
 _secret_key = st.secrets.get("GOOGLE_API_KEY", "")
@@ -50,10 +58,10 @@ with st.sidebar:
         st.success("API Key가 Secrets에서 로드되었습니다.", icon="🔑")
     else:
         api_key = st.text_input(
-            "Google AI Studio API Key",
+            "Google AI Studio API Key (텍스트용)",
             type="password",
             placeholder="AIza...",
-            help="https://aistudio.google.com 에서 발급",
+            help="https://aistudio.google.com 에서 발급 — 프롬프트 생성에만 사용",
         )
 
     st.divider()
@@ -65,7 +73,7 @@ with st.sidebar:
 
     aspect_ratio = st.selectbox(
         "이미지 비율",
-        options=["16:9", "1:1", "9:16", "4:3", "3:4"],
+        options=list(RATIO_SIZE.keys()),
         index=0,
     )
 
@@ -85,12 +93,7 @@ with st.sidebar:
 
     st.divider()
     st.caption(f"텍스트 모델: `{TEXT_MODEL}`")
-    IMAGE_MODEL = st.selectbox(
-        "이미지 모델",
-        options=["gemini-2.0-flash-preview-image-generation", "gemini-2.0-flash-exp"],
-        index=0,
-        help="Gemini 기반 이미지 생성 (AI Studio API Key로 바로 사용 가능)",
-    )
+    st.caption("이미지 생성: `Pollinations.ai` (무료)")
 
 # ── 입력 영역 ──────────────────────────────────────────────────────────────────
 st.subheader("📝 대본 입력")
@@ -107,7 +110,7 @@ run = st.button("🚀 이미지 생성", type="primary", use_container_width=Tru
 
 def validate() -> bool:
     if not api_key:
-        st.error("API Key를 입력해주세요.")
+        st.error("Google API Key를 입력해주세요.")
         return False
     if not script.strip():
         st.error("대본을 입력해주세요.")
@@ -115,18 +118,15 @@ def validate() -> bool:
     return True
 
 
-def build_clients():
+def build_text_client():
     genai.configure(api_key=api_key)
-    text_client = genai.GenerativeModel(
+    return genai.GenerativeModel(
         model_name=TEXT_MODEL,
         system_instruction=system_prompt,
     )
-    image_client = genai_new.Client(api_key=api_key)
-    return text_client, image_client
 
 
 def split_script(text: str, sec: int) -> list[str]:
-    """문장 경계를 존중하며 글자 수 기준으로 대본 분할"""
     chars = int(CHARS_PER_SEC * sec)
     sentences = re.split(r'(?<=[.!?。])\s+|(?<=다)\s+|(?<=죠)\s+|(?<=요)\s+', text.strip())
     sentences = [s.strip() for s in sentences if s.strip()]
@@ -143,7 +143,6 @@ def split_script(text: str, sec: int) -> list[str]:
     if current:
         cuts.append(current)
 
-    # 너무 짧은 마지막 컷 병합
     if len(cuts) >= 2 and len(cuts[-1]) < chars // 3:
         cuts[-2] += " " + cuts.pop()
 
@@ -151,7 +150,6 @@ def split_script(text: str, sec: int) -> list[str]:
 
 
 def make_prompt(text_client, cut: str, template: str) -> str:
-    """Gemini로 이미지 프롬프트 생성"""
     user_msg = (
         f"다음 대본 장면을 스틱맨 2D 이미지 프롬프트로 변환하세요.\n\n"
         f"장면: {cut}\n\n"
@@ -160,25 +158,20 @@ def make_prompt(text_client, cut: str, template: str) -> str:
     resp = text_client.generate_content(user_msg)
     raw = resp.text.strip().strip('"').strip("'")
     raw = re.sub(r"```[a-z]*\n?", "", raw).strip("`").strip()
-
-    # 템플릿에 장면 삽입 (모델이 전체 형식을 반환한 경우 그대로 사용)
     if "SCENE:" in raw:
         return raw
     return template.replace("{scene}", raw)
 
 
-def generate_image(image_client, prompt: str, ratio: str, model: str) -> Image.Image | None:
-    resp = image_client.models.generate_content(
-        model=model,
-        contents=prompt,
-        config=types.GenerateContentConfig(
-            response_modalities=["IMAGE", "TEXT"],
-        ),
+def generate_image(prompt: str, ratio: str) -> Image.Image | None:
+    w, h = RATIO_SIZE[ratio]
+    url = (
+        f"https://image.pollinations.ai/prompt/{quote(prompt)}"
+        f"?width={w}&height={h}&nologo=true&enhance=false&model=flux"
     )
-    for part in resp.candidates[0].content.parts:
-        if part.inline_data is not None:
-            return Image.open(io.BytesIO(part.inline_data.data))
-    return None
+    resp = requests.get(url, timeout=60)
+    resp.raise_for_status()
+    return Image.open(io.BytesIO(resp.content))
 
 
 def make_zip(cuts: list[str], images: list) -> bytes:
@@ -199,9 +192,9 @@ if run:
         st.stop()
 
     try:
-        text_client, image_client = build_clients()
+        text_client = build_text_client()
     except Exception as e:
-        st.error(f"클라이언트 초기화 실패: {e}")
+        st.error(f"텍스트 클라이언트 초기화 실패: {e}")
         st.stop()
 
     st.divider()
@@ -244,7 +237,7 @@ if run:
     for i, (cut, prompt) in enumerate(zip(cuts, prompts)):
         progress.progress(i / len(prompts), text=f"이미지 생성 중... {i+1}/{len(prompts)}")
         try:
-            img = generate_image(image_client, prompt, aspect_ratio, IMAGE_MODEL)
+            img = generate_image(prompt, aspect_ratio)
             images.append(img)
         except Exception as e:
             st.warning(f"컷 {i+1} 이미지 생성 실패: {e}")
@@ -277,7 +270,6 @@ if run:
 
     st.divider()
 
-    # 전체 ZIP 다운로드
     if any(images):
         st.download_button(
             "📦 전체 ZIP 다운로드",
