@@ -39,16 +39,23 @@ st.set_page_config(page_title="스틱맨 이미지 생성기", page_icon="🎬",
 st.title("🎬 스틱맨 이미지 생성기")
 st.caption("대본 입력 → 장면 분할 → 이미지 자동 생성")
 
+# ── API Key (Secrets 우선, 없으면 사이드바 입력) ───────────────────────────────
+_secret_key = st.secrets.get("GOOGLE_API_KEY", "")
+
 # ── 사이드바 ───────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.header("⚙️ 설정")
 
-    api_key = st.text_input(
-        "Google AI Studio API Key",
-        type="password",
-        placeholder="AIza...",
-        help="https://aistudio.google.com 에서 발급",
-    )
+    if _secret_key:
+        api_key = _secret_key
+        st.success("API Key가 Secrets에서 로드되었습니다.", icon="🔑")
+    else:
+        api_key = st.text_input(
+            "Google AI Studio API Key",
+            type="password",
+            placeholder="AIza...",
+            help="https://aistudio.google.com 에서 발급",
+        )
 
     st.divider()
 
