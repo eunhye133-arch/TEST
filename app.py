@@ -162,8 +162,8 @@ def make_prompt(text_client, cut: str, template: str) -> str:
     resp = text_client.generate_content(user_msg)
     raw = resp.text.strip().strip('"').strip("'")
     raw = re.sub(r"```[a-z]*\n?", "", raw).strip("`").strip()
-    # 한글 문자 완전 제거
-    raw = re.sub(r'[가-힣ㄱ-ㅎㅏ-ㅣ]+', '', raw).strip()
+    # 비ASCII 문자 전부 제거 (한글 등)
+    raw = raw.encode("ascii", "ignore").decode("ascii").strip()
     if "SCENE:" in raw:
         return raw
     return template.replace("{scene}", raw)
