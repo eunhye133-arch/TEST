@@ -121,7 +121,10 @@ def build_clients():
         model_name=TEXT_MODEL,
         system_instruction=system_prompt,
     )
-    image_client = genai_new.Client(api_key=api_key)
+    image_client = genai_new.Client(
+        api_key=api_key,
+        http_options={"api_version": "v1alpha"},
+    )
     return text_client, image_client
 
 
