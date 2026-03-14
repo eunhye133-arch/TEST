@@ -9,7 +9,6 @@ from PIL import Image
 
 # ── 상수 ──────────────────────────────────────────────────────────────────────
 TEXT_MODEL = "gemini-2.0-flash"
-IMAGE_MODEL = "imagen-3.0-generate-002"
 CHARS_PER_SEC = 4.5  # 한국어 기준 초당 평균 글자 수
 
 DEFAULT_STYLE = (
@@ -84,8 +83,14 @@ with st.sidebar:
         height=180,
     )
 
+    st.divider()
     st.caption(f"텍스트 모델: `{TEXT_MODEL}`")
-    st.caption(f"이미지 모델: `{IMAGE_MODEL}`")
+    IMAGE_MODEL = st.selectbox(
+        "이미지 모델",
+        options=["imagen-3.0-generate-001", "imagen-3.0-fast-generate-001"],
+        index=0,
+        help="imagen-3.0-generate-001: 고품질 / fast: 빠른 생성",
+    )
 
 # ── 입력 영역 ──────────────────────────────────────────────────────────────────
 st.subheader("📝 대본 입력")
@@ -162,9 +167,9 @@ def make_prompt(text_client, cut: str, template: str) -> str:
     return template.replace("{scene}", raw)
 
 
-def generate_image(image_client, prompt: str, ratio: str) -> Image.Image | None:
+def generate_image(image_client, prompt: str, ratio: str, model: str) -> Image.Image | None:
     resp = image_client.models.generate_images(
-        model=IMAGE_MODEL,
+        model=model,
         prompt=prompt,
         config=types.GenerateImagesConfig(
             number_of_images=1,
@@ -241,7 +246,7 @@ if run:
     for i, (cut, prompt) in enumerate(zip(cuts, prompts)):
         progress.progress(i / len(prompts), text=f"이미지 생성 중... {i+1}/{len(prompts)}")
         try:
-            img = generate_image(image_client, prompt, aspect_ratio)
+            img = generate_image(image_client, prompt, aspect_ratio, IMAGE_MODEL)
             images.append(img)
         except Exception as e:
             st.warning(f"컷 {i+1} 이미지 생성 실패: {e}")
