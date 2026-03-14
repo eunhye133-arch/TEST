@@ -151,18 +151,20 @@ def split_script(text: str, sec: int) -> list[str]:
 
 
 def make_prompt(text_client, cut: str, template: str) -> str:
+    # 시스템 프롬프트 없는 별도 클라이언트로 번역 (한국어 system_instruction 영향 차단)
+    translator = genai.GenerativeModel(model_name=TEXT_MODEL)
     translate_msg = (
-        f"Translate this Korean text into ONE short English sentence (max 20 words). "
-        f"Use only basic ASCII characters. No quotes, no special symbols.\n\nKorean: {cut}"
+        f"Translate the following Korean sentence into English. "
+        f"Output ONLY the English translation, nothing else.\n\n{cut}"
     )
-    trans_resp = text_client.generate_content(translate_msg)
+    trans_resp = translator.generate_content(translate_msg)
     raw = trans_resp.text.strip()
     # 유니코드 특수문자 → ASCII 대체
-    raw = raw.replace('\u201c', '').replace('\u201d', '').replace('\u2018', '').replace('\u2019', '')
+    raw = raw.replace('\u201c', '"').replace('\u201d', '"')
+    raw = raw.replace('\u2018', "'").replace('\u2019', "'")
     raw = raw.replace('\u2014', '-').replace('\u2013', '-').replace('\u2026', '...')
-    # 한글 및 비ASCII 제거
-    raw = re.sub(r'[\uAC00-\uD7A3\u1100-\u11FF\u3130-\u318F]+', '', raw)
-    raw = raw.encode("ascii", "ignore").decode("ascii").strip()
+    # 한글 제거
+    raw = re.sub(r'[\uAC00-\uD7A3\u1100-\u11FF\u3130-\u318F]+', '', raw).strip()
     if not raw or len(raw) < 5:
         raw = "a person making a gesture in a simple flat-color room"
     return template.replace("{scene}", raw)
