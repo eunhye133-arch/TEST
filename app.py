@@ -87,9 +87,9 @@ with st.sidebar:
     st.caption(f"텍스트 모델: `{TEXT_MODEL}`")
     IMAGE_MODEL = st.selectbox(
         "이미지 모델",
-        options=["imagen-3.0-generate-001", "imagen-3.0-fast-generate-001"],
+        options=["gemini-2.0-flash-preview-image-generation", "gemini-2.0-flash-exp"],
         index=0,
-        help="imagen-3.0-generate-001: 고품질 / fast: 빠른 생성",
+        help="Gemini 기반 이미지 생성 (AI Studio API Key로 바로 사용 가능)",
     )
 
 # ── 입력 영역 ──────────────────────────────────────────────────────────────────
@@ -123,7 +123,7 @@ def build_clients():
     )
     image_client = genai_new.Client(
         api_key=api_key,
-        http_options={"api_version": "v1"},
+        http_options={"api_version": "v1alpha"},
     )
     return text_client, image_client
 
@@ -171,18 +171,16 @@ def make_prompt(text_client, cut: str, template: str) -> str:
 
 
 def generate_image(image_client, prompt: str, ratio: str, model: str) -> Image.Image | None:
-    resp = image_client.models.generate_images(
+    resp = image_client.models.generate_content(
         model=model,
-        prompt=prompt,
-        config=types.GenerateImagesConfig(
-            number_of_images=1,
-            aspect_ratio=ratio,
-            safety_filter_level="block_few",
-            person_generation="allow_adult",
+        contents=prompt,
+        config=types.GenerateContentConfig(
+            response_modalities=["IMAGE", "TEXT"],
         ),
     )
-    if resp.generated_images:
-        return Image.open(io.BytesIO(resp.generated_images[0].image.image_bytes))
+    for part in resp.candidates[0].content.parts:
+        if part.inline_data is not None:
+            return Image.open(io.BytesIO(part.inline_data.data))
     return None
 
 
