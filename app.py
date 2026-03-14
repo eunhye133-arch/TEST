@@ -3,6 +3,7 @@ import google.generativeai as genai
 import requests
 import io
 import re
+import time
 import zipfile
 from PIL import Image
 from urllib.parse import quote
@@ -150,23 +151,18 @@ def split_script(text: str, sec: int) -> list[str]:
 
 
 def make_prompt(text_client, cut: str, template: str) -> str:
-    user_msg = (
-        f"Convert the following Korean script scene into an English-only image prompt.\n\n"
-        f"Scene: {cut}\n\n"
-        f"Rules:\n"
-        f"- Output ONLY English text, absolutely NO Korean or other non-English characters\n"
-        f"- No quotes, no code blocks, no explanations\n"
-        f"- Use this exact format:\n"
-        f"{template.replace('{scene}', '[describe the scene in English]')}"
+    # 1단계: 한국어 장면을 영어로 번역
+    translate_msg = (
+        f"Translate this Korean text into a single concise English sentence "
+        f"describing the visual scene. Reply in English only, no Korean.\n\nKorean: {cut}"
     )
-    resp = text_client.generate_content(user_msg)
-    raw = resp.text.strip().strip('"').strip("'")
-    raw = re.sub(r"```[a-z]*\n?", "", raw).strip("`").strip()
-    # 비ASCII 문자 전부 제거 (한글 등)
-    raw = raw.encode("ascii", "ignore").decode("ascii").strip()
-    if "SCENE:" in raw:
-        return raw
-    return template.replace("{scene}", raw)
+    trans_resp = text_client.generate_content(translate_msg)
+    english_scene = trans_resp.text.strip().encode("ascii", "ignore").decode("ascii").strip()
+    if not english_scene:
+        english_scene = "a person standing in a simple flat-color background"
+
+    # 2단계: 영어 장면으로 이미지 프롬프트 생성
+    return template.replace("{scene}", english_scene)
 
 
 def generate_image(prompt: str, ratio: str) -> Image.Image | None:
@@ -247,6 +243,8 @@ if run:
     for i, (cut, prompt) in enumerate(zip(cuts, prompts)):
         progress.progress(i / len(prompts), text=f"이미지 생성 중... {i+1}/{len(prompts)}")
         try:
+            if i > 0:
+                time.sleep(3)  # Pollinations 요청 간격
             img = generate_image(prompt, aspect_ratio)
             images.append(img)
         except Exception as e:
