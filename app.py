@@ -151,13 +151,19 @@ def split_script(text: str, sec: int) -> list[str]:
 
 def make_prompt(text_client, cut: str, template: str) -> str:
     user_msg = (
-        f"다음 대본 장면을 스틱맨 2D 이미지 프롬프트로 변환하세요.\n\n"
-        f"장면: {cut}\n\n"
-        f"순수 영문 프롬프트만 출력하세요 (따옴표, 코드블록, 설명 없이)."
+        f"Convert the following Korean script scene into an English-only image prompt.\n\n"
+        f"Scene: {cut}\n\n"
+        f"Rules:\n"
+        f"- Output ONLY English text, absolutely NO Korean or other non-English characters\n"
+        f"- No quotes, no code blocks, no explanations\n"
+        f"- Use this exact format:\n"
+        f"{template.replace('{scene}', '[describe the scene in English]')}"
     )
     resp = text_client.generate_content(user_msg)
     raw = resp.text.strip().strip('"').strip("'")
     raw = re.sub(r"```[a-z]*\n?", "", raw).strip("`").strip()
+    # 한글 문자 완전 제거
+    raw = re.sub(r'[가-힣ㄱ-ㅎㅏ-ㅣ]+', '', raw).strip()
     if "SCENE:" in raw:
         return raw
     return template.replace("{scene}", raw)
